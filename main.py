@@ -3,6 +3,10 @@ import os
 import io
 import getpass
 import json
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).with_name(".env"))
 
 # Third-party library imports
 import PyPDF2
@@ -12,16 +16,15 @@ import ipywidgets as widgets
 from IPython.display import display, Markdown
 
 # Google generative AI imports
-import google.generativeai as genai 
+import google.genai as genai 
 
 # LangChain imports
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.schema.document import Document
-from langchain_community.document_loaders import TextLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 
 # Chromadb imports
@@ -64,9 +67,14 @@ def get_text_chunks_langchain(text):
     docs = [x for x in chunks]
     return docs
 
+
+# Load the PDF from the same directory as this script.
+pdf_path = Path(__file__).with_name("ShoesStore.pdf")
+shoe_chunks = process_pdf(pdf_path)
+
 # Method to generate embeddings only
 def generate_embeddings(textt):
-    embedding_model = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    embedding_model = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
     text_embeddings = [embedding_model.embed_query(text) for text in textt]
     return text_embeddings
 
@@ -77,14 +85,14 @@ for shoe in shoe_chunks:
     print("Embeddings for shoe: ", count)
     embeddings = generate_embeddings(shoe)
     text_embeddings.append(embeddings)
-    print(embeddings)
+    print("Generated embeddings:", embeddings)
     count = count + 1
 
 # Extract embeddings list from the list of lists
 embeddings_list=[]
 for emb in text_embeddings:
   embeddings_list.append(emb[0])
-  print(emb[0])
+  print("Stored embedding vector:", emb[0])
 # Extract document list from the list of lists
 doc_list=[]
 for shoe in shoe_chunks:
@@ -118,11 +126,10 @@ results = product_embeddings_collection.query(
   input_embeddings,
   n_results=2
 )
-result =generation(results, input_text)
 
 # Text retrieval through RAG
 def generation(retriever, input_text):
-  llm_text = ChatGoogleGenerativeAI(model="gemini-1.5-pro-latest")
+  llm_text = ChatGoogleGenerativeAI(model="gemini-3.6-flash")
   template = """
   ```
   {context}
@@ -147,3 +154,7 @@ def generation(retriever, input_text):
 
   result = rag_chain.invoke({"context": retriever, "information": input_text})
   return result
+
+
+result = generation(results, input_text)
+print(result)
