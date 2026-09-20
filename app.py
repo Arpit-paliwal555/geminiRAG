@@ -167,3 +167,96 @@ def embed_images_with_mediapipe(images):
 
 # Image embeddings
 image_embeddings= embed_images_with_mediapipe(images)
+
+# Convert image embeddings to lists
+image_embeddings = [embedding.tolist() if isinstance(embedding, np.ndarray) else embedding for embedding in image_embeddings]
+
+
+# Extract document list from the list of lists
+doc_list=[]
+for shoe in shoe_chunks:
+   doc_list.append(shoe[0])
+
+# Unique IDs for chromadb
+ids = list(map(str, range(1, 21)))
+
+# Create the chromadb client
+client = chromadb.Client()
+# Create db collection
+collection_name = "products_embeddings_collection"
+client.get_or_create_collection(
+        name=collection_name,
+        metadata={"hnsw:space": "cosine"}
+    )
+
+# Store the documents and image embeddings
+product_embeddings_collection  = client.get_collection(name=collection_name)
+product_embeddings_collection.add(
+        documents=doc_list,
+        embeddings=image_embeddings,
+        ids=ids
+    )
+
+# Get the user's question
+col1, col2 = st.columns(2)
+
+# Text input
+with col1:
+  user_question = st.text_area("Enter some text")
+
+# Image input
+with col2:
+  user_image = st.file_uploader("Upload an image", type=["png", "jpg", "jpeg"])
+
+
+if st.button("Get Answer"):
+    if not user_question or user_image is None:
+        st.rerun()
+
+    # Read the uploaded image file as an OpenCV image
+    pil_image = Image.open(user_image).convert('RGB')  # Ensure RGB mode
+    query_image = np.array(pil_image)
+    query_image = cv2.cvtColor(query_image, cv2.COLOR_RGB2BGR)  # Convert RGB to BGR for OpenCV
+    # Generate embeddings of the input image
+    query_image_embedding = embed_images_with_mediapipe([query_image])[0]
+    # Convert image embeddings to lists
+    query_image_embedding = [embedding.tolist() for embedding in query_image_embedding]
+
+    # Retrieve relevant documents
+    results = product_embeddings_collection.query(
+    query_image_embedding,
+    n_results=5
+    )
+
+
+def generation(retriever, input_query):
+  llm_text = ChatGoogleGenerativeAI(model="gemini-1.5-pro-latest")
+  template = """
+  ```{context}```
+
+    {information}
+
+
+    First greet!
+    Pick the information from the given {context} that is the nearest to the {information} and Provide following information in a bullet format about the shoe using the {information}: Shoes name, Brand name, Style, Style code, Original retail price, Store Location and description.
+    If the {information} is not available in the {context}, just return "Not available in the store, Apologies"
+    """
+  prompt = ChatPromptTemplate.from_template(template)
+
+  rag_chain = (
+      {"context": RunnablePassthrough(), "information": RunnablePassthrough()}
+      | prompt
+      | llm_text
+      | StrOutputParser()
+  )
+  # Passing relevant results and text as input data
+
+  result = rag_chain.invoke({"context": retriever, "information": input_query})
+  return result
+
+# Call the generation method
+result =generation(results, user_question)
+# Display the answer
+st.subheader("Answer:")
+st.write(result)
+
