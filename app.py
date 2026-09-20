@@ -3,6 +3,10 @@
 import os
 import io
 import json
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).with_name(".env"))
 
 # Third-party library imports
 import PyPDF2
@@ -16,17 +20,12 @@ from PIL import Image
 import ipywidgets as widgets
 from IPython.display import display, Markdown
 
-# Google generative AI imports
-import google.generativeai as genai  
-
 # LangChain imports
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.schema.document import Document
-from langchain_community.document_loaders import TextLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 
 # Chromadb imports
@@ -41,9 +40,9 @@ from mediapipe.tasks.python import vision
 # Import streamlit
 import streamlit as st
 
-google_api_key = os.environ["GEMINI_API_KEY"]
+google_api_key = os.getenv("GEMINI_API_KEY")
 if google_api_key is None:
-    st.warning("API key not found. Please set the google_api_key environment variable.")
+    st.error("GEMINI_API_KEY was not found. Add it to the .env file or set it in the environment.")
     st.stop()
 
 st.title("Customer Service Assistant") 
@@ -145,7 +144,10 @@ def create_mp_image_from_np_array(image_np):
 
 # Method to generate image embeddings
 def embed_images_with_mediapipe(images):
-    base_options = python.BaseOptions(model_asset_path='embedder.tflite')
+    model_path = Path(__file__).with_name(
+        "mobilenet_v3_small_075_224_embedder.tflite"
+    )
+    base_options = python.BaseOptions(model_asset_path=str(model_path))
     l2_normalize = True
     quantize = True
     options = vision.ImageEmbedderOptions(
@@ -209,6 +211,8 @@ with col2:
   user_image = st.file_uploader("Upload an image", type=["png", "jpg", "jpeg"])
 
 
+results = None
+
 if st.button("Get Answer"):
     if not user_question or user_image is None:
         st.rerun()
@@ -254,9 +258,8 @@ def generation(retriever, input_query):
   result = rag_chain.invoke({"context": retriever, "information": input_query})
   return result
 
-# Call the generation method
-result =generation(results, user_question)
-# Display the answer
-st.subheader("Answer:")
-st.write(result)
+if results is not None:
+    result = generation(results, user_question)
+    st.subheader("Answer:")
+    st.write(result)
 
